@@ -1,6 +1,6 @@
 # Refractium
 
-**Live:** https://genz000.github.io/refractium/
+**Live:** https://genz000.github.io/Refractium/
 
 Glass distortion for images and SVGs. Simulates how different kinds of glass bend what is behind them. Single self-contained file (`index.html`), WebGL shader, shadcn/ui-style interface.
 

@@ -352,6 +352,10 @@ textarea.textarea{
             <button role="tab" data-shape="1">Squircle</button>
             <button role="tab" data-shape="2">Wide</button>
           </div>
+          <div class="switch-row">
+            <div><div class="label">Zoom</div><div class="desc">Off keeps the image at its own size; only the distortion stays</div></div>
+            <button class="switch" role="switch" aria-checked="true" id="zoomSw" aria-label="Zoom"></button>
+          </div>
           <div class="stack" id="glassSliders"></div>
           <div class="switch-row">
             <div><div class="label">Follow cursor</div><div class="desc">Glass tracks the pointer without dragging</div></div>
@@ -397,7 +401,7 @@ const DEFAULTS = {
   style:0, strength:.45, detail:.5, animate:false, ca:.25,
   edge:0, spread:.3,
   spec:.6, shade:.35, shadow:.4,
-  follow:false
+  follow:false, zoom:true
 };
 const S = Object.assign({}, DEFAULTS);
 let cur = { x:S.cx, y:S.cy };
@@ -447,7 +451,7 @@ const SLIDERS = {
   ],
   glassSliders: [
     { key:"radius", label:"Glass size", min:.06, max:1, step:.005, fmt:pct },
-    { key:"mag", label:"Magnification", min:.5, max:6, step:.05, fmt:v=>v.toFixed(2)+"×" },
+    { key:"mag", label:"Magnification", min:.5, max:6, step:.05, fmt:v=>v.toFixed(2)+"×", show:()=>S.zoom },
   ],
   lookSliders: [
     { key:"spec", label:"Highlight", min:0, max:1, step:.01, fmt:pct },
@@ -470,9 +474,10 @@ varying vec2 vUv;
 uniform sampler2D uTex;
 uniform vec2 uRes, uCenter;
 uniform float uRadius, uMag, uStrength, uDetail, uCA, uSpread, uSpec, uShade, uShadow, uTime;
-uniform int uStyle, uEdge, uShape, uBypass;
+uniform int uStyle, uEdge, uShape, uBypass, uZoom;
 
 float facetEdge = 0.;
+float gZoom = 1.;   /* divides every warped point: Magnification, or the style's own centre scale with Zoom off */
 
 vec4 tex(vec2 uv){
   vec2 inb = step(vec2(0.), uv) * step(uv, vec2(1.));
@@ -535,6 +540,16 @@ vec2 warp(vec2 p, float r){
   }
 }
 
+/* How much a style scales the image at the centre of the glass. With Zoom off every warped point is
+   divided by it, so the image under the glass keeps its size and only the distortion remains. */
+float centreScale(){
+  float s = uStrength;
+  if (uStyle == 3 || uStyle == 4) return 1.;            // ripple, swirl: no net scale
+  if (uStyle == 5) return 1. - .25*s;                   // liquid
+  if (uStyle == 6) return 1. - .35*s;                   // faceted
+  return warp(vec2(.05, 0.), .05).x / .05;              // convex, glass ball, concave
+}
+
 /* one shading sample at pixel position px */
 vec4 shadeAt(vec2 px){
   vec2 c = uCenter * uRes;
@@ -553,7 +568,7 @@ vec4 shadeAt(vec2 px){
   else if (uEdge == 1) W = 1. - smoothstep(1. - uSpread, 1., r);
   else                 W = 1. - smoothstep(1., 1. + uSpread * 2., r);
 
-  vec2 wp = warp(p, r) / uMag;           // warped point, lens units, magnified
+  vec2 wp = warp(p, r) / gZoom;          // warped point, lens units, magnified (or zoom removed)
   float ca = uCA * .045 * min(r, 1.4) * min(r, 1.4);
   vec2 sR = mix(px, c + wp * (1. + ca) * R, W);
   vec2 sG = mix(px, c + wp * R, W);
@@ -590,6 +605,7 @@ vec4 shadeAt(vec2 px){
 
 void main(){
   if (uBypass == 1) { gl_FragColor = tex(vUv); return; }
+  gZoom = uZoom == 1 ? uMag : max(centreScale(), .05);
   vec2 px = vUv * uRes;
   /* 4x rotated-grid supersampling: smooth rim, highlights and compressed detail */
   gl_FragColor = .25 * (shadeAt(px + vec2( .125,  .375)) + shadeAt(px + vec2(-.375,  .125))
@@ -617,7 +633,7 @@ gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
 
 const U = {};
 ["uTex","uRes","uCenter","uRadius","uMag","uStrength","uDetail","uCA","uSpread","uSpec","uShade","uShadow","uTime",
- "uStyle","uEdge","uShape","uBypass"].forEach(n => U[n] = gl.getUniformLocation(prog, n));
+ "uStyle","uEdge","uShape","uBypass","uZoom"].forEach(n => U[n] = gl.getUniformLocation(prog, n));
 
 const texture = gl.createTexture();
 gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -639,6 +655,7 @@ function draw(w, h, centre){
   gl.uniform2f(U.uCenter, centre.x, centre.y);
   gl.uniform1f(U.uRadius, S.radius);
   gl.uniform1f(U.uMag, S.mag);
+  gl.uniform1i(U.uZoom, S.zoom ? 1 : 0);
   gl.uniform1f(U.uStrength, S.strength);
   gl.uniform1f(U.uDetail, S.detail);
   gl.uniform1f(U.uCA, S.ca);
@@ -837,13 +854,14 @@ const presetSel = document.getElementById("presetSel");
 presetSel.innerHTML = PRESETS.map((p, i) => `<option value="${i}">${p.name}</option>`).join("")
   + `<option value="custom" disabled hidden>Custom</option>`;
 presetSel.onchange = () => {
-  Object.assign(S, DEFAULTS, { cx:S.cx, cy:S.cy, follow:S.follow }, PRESETS[+presetSel.value].v);
+  Object.assign(S, DEFAULTS, { cx:S.cx, cy:S.cy, follow:S.follow, zoom:S.zoom }, PRESETS[+presetSel.value].v);
   syncAll();
 };
 const clearPreset = () => { presetSel.value = "custom"; };
 
 const animSw = document.getElementById("animSw"), animRow = document.getElementById("animRow");
 const followSw = document.getElementById("followSw");
+const zoomSw = document.getElementById("zoomSw");
 const edgeTabs = [...document.querySelectorAll("[data-edge]")], shapeTabs = [...document.querySelectorAll("[data-shape]")];
 
 function syncAll(){
@@ -856,13 +874,15 @@ function syncAll(){
   document.getElementById("edgeHelp").textContent = EDGE_HELP[S.edge];
   shapeTabs.forEach(t => t.setAttribute("aria-selected", +t.dataset.shape === S.shape));
   followSw.setAttribute("aria-checked", S.follow);
+  zoomSw.setAttribute("aria-checked", S.zoom);
   requestRender();
 }
 edgeTabs.forEach(t => t.onclick = () => { S.edge = +t.dataset.edge; clearPreset(); syncAll(); });
 shapeTabs.forEach(t => t.onclick = () => { S.shape = +t.dataset.shape; clearPreset(); syncAll(); });
 animSw.onclick = () => { S.animate = !S.animate; clearPreset(); syncAll(); };
 followSw.onclick = () => { S.follow = !S.follow; syncAll(); };
-document.getElementById("resetBtn").onclick = () => { Object.assign(S, DEFAULTS, { cx:S.cx, cy:S.cy, follow:S.follow }); presetSel.value = "0"; syncAll(); };
+zoomSw.onclick = () => { S.zoom = !S.zoom; syncAll(); };
+document.getElementById("resetBtn").onclick = () => { Object.assign(S, DEFAULTS, { cx:S.cx, cy:S.cy, follow:S.follow, zoom:S.zoom }); presetSel.value = "0"; syncAll(); };
 
 /* source controls */
 const fileInput = document.getElementById("fileInput"), dropzone = document.getElementById("dropzone");
@@ -902,6 +922,7 @@ canvas.addEventListener("pointerup", () => dragging = false);
 canvas.addEventListener("pointercancel", () => dragging = false);
 canvas.addEventListener("wheel", e => {
   e.preventDefault();
+  if (!S.zoom) return;
   const d = inputs.mag.def;
   S.mag = Math.min(d.max, Math.max(d.min, S.mag * Math.exp(-e.deltaY * .0015)));
   syncSlider("mag"); requestRender();
@@ -917,8 +938,8 @@ canvas.addEventListener("keydown", e => {
     case "ArrowRight": S.cx = Math.min(1, S.cx + step); break;
     case "ArrowUp": S.cy = Math.max(0, S.cy - step); break;
     case "ArrowDown": S.cy = Math.min(1, S.cy + step); break;
-    case "+": case "=": S.mag = Math.min(6, S.mag * 1.1); syncSlider("mag"); break;
-    case "-": case "_": S.mag = Math.max(.5, S.mag / 1.1); syncSlider("mag"); break;
+    case "+": case "=": if (S.zoom) { S.mag = Math.min(6, S.mag * 1.1); syncSlider("mag"); } break;
+    case "-": case "_": if (S.zoom) { S.mag = Math.max(.5, S.mag / 1.1); syncSlider("mag"); } break;
     default: used = false;
   }
   if (used) { e.preventDefault(); requestRender(); }

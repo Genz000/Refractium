@@ -13,9 +13,11 @@ Glass distortion for images and SVGs. Simulates how different kinds of glass ben
 - Distortion styles: Convex, Glass ball, Concave, Ripple, Swirl, Liquid, Faceted
 - Glass edge: Clean, Soft, or Spill outside (with transition width)
 - Glass shape (round, squircle, wide), highlight, edge shading, drop shadow
+- Zoom on/off: turn it off to keep the image at its own size so only the distortion shows
 - 4× supersampled rendering for a smooth, clean rim
 - Compare (hold C), export PNG / JPG / WebP at full resolution
 
 ## Notes
+- The default image is a Norwegian fjord, oil painting signed A. Leu, 1861 (public domain), embedded in `index.html`.
 - Needs an internet connection only for the Geist font (falls back to system fonts).
 - SVGs that reference external images or fonts render without them; inline those first.
